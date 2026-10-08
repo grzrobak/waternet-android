@@ -1,0 +1,12 @@
+build/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/app/jni/SDL/
+android/app/jni/SDL_image/
+android/app/jni/SDL_mixer/
+android/app/jni/SDL_ttf/
+*.iml
+.idea/

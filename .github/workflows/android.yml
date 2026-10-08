@@ -1,0 +1,45 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download SDL2 libraries
+        run: bash android/fetch-libs.sh
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Collect APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk Waternet.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Waternet-apk
+          path: Waternet.apk
+
+      - name: Publish as the "latest" release (easy to download on a phone)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest Waternet.apk \
+            --target "$GITHUB_SHA" \
+            --title "Waternet for Android (latest build)" \
+            --notes "Android port of Waternet for the Dingoo by Willems Davy - Willems Soft - http://www.willemssoft.be. Free, not for sale. Download Waternet.apk on your phone and open it to install."

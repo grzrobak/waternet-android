@@ -5,25 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fstream>
-#include <SDL/SDL.h>
-#include <SDL/SDL_ttf.h>
-#include <SDL/SDL_image.h>
-#include <SDL/SDL_mixer.h>
+#include <time.h>
+#include "port.h"   // SDL2 port: replaces the SDL 1.2, SDL_gfx and SDL_rotozoom headers
 #include <math.h>
 #include "gp2x.h"
-#include <SDL/SDL_gfxPrimitives.h>
-#include <SDL/SDL_rotozoom.h>
 #include <vector>
 
-#ifdef GP2X
-//#include <SDL_gp2x.h>
-#define SCREEN_BPP 16
-#endif
-
-#ifdef WIN32
-#include <SDL/SDL_keysym.h>
+// SDL2 port: always render to a 32 bit surface
 #define SCREEN_BPP 32
-#endif
 
 
 
@@ -236,8 +225,11 @@ class CMainMenu
         void NextItem(); //Select the next menuitem
         void PreviousItem(); //select the previous menuitem
         int GetSelection() { return Selection; } // return the current selection
+        void SetSelection(int s) { Selection = s; } // android port: tap on a menu item
         ~CMainMenu(); // destructor
 };
+CMainMenu *CurrentMainMenu = NULL; // android port: menu shown on the title screen
+CSelector *CurrentSelector = NULL; // android port: cursor of the running game
 // constructor of main menu will Load the graphics and set the current selection to 1 (io newgame)
 CMainMenu::CMainMenu()
 {
@@ -3135,7 +3127,7 @@ void LoadSettings()
         fscanf(SettingsFile,"21=%d\n",&UnLockedLevels[RotatingSliding][Medium]);
         fscanf(SettingsFile,"22=%d\n",&UnLockedLevels[RotatingSliding][Hard]);
         fscanf(SettingsFile,"23=%d\n",&UnLockedLevels[RotatingSliding][Tutorial]);
-        fscanf(SettingsFile,"Skin=%s\n",&SkinName);
+        fscanf(SettingsFile,"Skin=%s\n",SkinName);
         for(Teller=0;Teller<InstalledSkinsCount;Teller++)
         {
             if (strcmp(InstalledSkins[Teller],SkinName) == 0)
@@ -3348,6 +3340,7 @@ void TitleScreen()
     SDL_Surface *Tmp;
     Tmp = SDL_DisplayFormat(Buffer);
     CMainMenu *Menu = new CMainMenu;
+    CurrentMainMenu = Menu;
     Uint8 alpha = 0;
     while (GameState == GSTitleScreen)
     {
@@ -3517,6 +3510,7 @@ void TitleScreen()
 
 
     }
+    CurrentMainMenu = NULL;
     delete Menu;
     SDL_FreeSurface(Tmp);
 }
@@ -4309,6 +4303,7 @@ void Game()
     SDL_Event Event;
     CSelector *Selector;
     Selector = new CSelector(World->GetStartPointX(),World->GetStartPointY());
+    CurrentSelector = Selector;
     //Tmp = SDL_CreateRGBSurface(SDL_HWSURFACE,WINDOW_WIDTH,WINDOW_HEIGHT,16,Screen->format->Rmask,Screen->format->Gmask,Screen->format->Bmask,Screen->format->Amask);
     Tmp = SDL_DisplayFormat(Buffer);
     Rect.w = Buffer->w;
@@ -4456,6 +4451,27 @@ void Game()
                             }
                         }
                         break;
+                    case DINGOO_BUTTON_B: // android port: rotate the other way (as on the GP2X)
+                        if((GameType == Rotating) || (GameType == RotatingSliding))
+                        {
+                            if (World->Rotate2(Selector->GetPosition().X,Selector->GetPosition().Y))
+                            {
+                                if (GlobalSoundEnabled)
+                                Mix_PlayChannel(-1,Sounds[SND_ROTATE],0);
+                                turns++;
+                            }
+                        }
+
+                        if((GameType== Sliding) || (GameType == RotatingSliding))
+                        {
+                            if (World->Slide(Selector->GetPosition().X,Selector->GetPosition().Y))
+                            {
+                                if (GlobalSoundEnabled)
+                                Mix_PlayChannel(-1,Sounds[SND_ROTATE],0);
+                                turns++;
+                            }
+                        }
+                        break;
                     default:
                         break;
                 }
@@ -4564,6 +4580,7 @@ void Game()
         }*/
 
     }
+    CurrentSelector = NULL;
     delete Selector;
     SDL_FreeSurface(Tmp);
     if(GlobalSoundEnabled)
@@ -5607,6 +5624,58 @@ void UnloadSounds()
 }
 
 
+// ---------------------------------------------------------------------------
+// android port: touch on the game picture (game coordinates 0..319 x 0..239)
+// ---------------------------------------------------------------------------
+bool Game_HandleTap(int x, int y)
+{
+    switch (GameState)
+    {
+        case GSGame:
+            // tap a pipe (or a sliding arrow): move the cursor there and press A
+            if (CurrentSelector && (x >= 0) && (y >= 0) && (x < NumCols * TileWidth) && (y < NumRows * TileHeight))
+            {
+                CurrentSelector->SetPosition(x / TileWidth, y / TileHeight);
+                Port_PushKey(DINGOO_BUTTON_A);
+            }
+            return true; // taps on the info panel do nothing
+        case GSTitleScreen:
+            if (CurrentMainMenu && (x >= 79) && (x < 79 + 172))
+            {
+                int Item = 0;
+                if ((y >= 73) && (y < 73 + 48)) Item = 1;
+                if ((y >= 121) && (y < 121 + 46)) Item = 2;
+                if ((y >= 167) && (y < 167 + 48)) Item = 3;
+                if (Item)
+                {
+                    CurrentMainMenu->SetSelection(Item);
+                    Port_PushKey(DINGOO_BUTTON_A);
+                }
+            }
+            return true;
+        case GSGameTypeMenu:
+        case GSLevelTypeMenu:
+            // the choice is shown in the middle: tap left/right of it to browse
+            if (x < 100) Port_PushKey(DINGOO_BUTTON_LEFT);
+            else if (x >= 230) Port_PushKey(DINGOO_BUTTON_RIGHT);
+            else Port_PushKey(DINGOO_BUTTON_A);
+            return true;
+        case GSLevelSelector:
+            // tap the edges of the board to browse levels, the middle to play
+            if (x < 50) Port_PushKey(DINGOO_BUTTON_LEFT);
+            else if ((x >= 190) && (x < 240)) Port_PushKey(DINGOO_BUTTON_RIGHT);
+            else if (x < 240) Port_PushKey(DINGOO_BUTTON_A);
+            return true;
+        default:
+            return false; // any other screen: a tap works like pressing A
+    }
+}
+
+void Game_SaveState()
+{
+    SaveSettings();
+}
+
 int main(int argc, char **argv)
 {
     SDL_Rect Rect;
@@ -5625,8 +5694,9 @@ int main(int argc, char **argv)
         }
     #endif
     srand(time(NULL));
-    putenv("SDL_NOMOUSE=1");
-	if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_VIDEO | SDL_INIT_AUDIO ) == 0)
+    if (!Port_PrepareData()) // android port: unpack data files and chdir to them
+        printf("Could not prepare the game data\n");
+	if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_VIDEO | SDL_INIT_AUDIO ) == 0)
 	{
 		printf("SDL Succesfully initialized\n");
         #ifdef GP2X
@@ -5655,16 +5725,9 @@ int main(int argc, char **argv)
                 printf("Succesfully Created Buffer\n");
                 SDL_FillRect(Buffer,NULL,SDL_MapRGB(Buffer->format,0,0,0));
                 SDL_ShowCursor(SDL_DISABLE);
-                #ifdef GP2X
-                Joystick = SDL_JoystickOpen(0);
-                SDL_JoystickEventState(SDL_ENABLE);
-              if (true) // if(Joystick)
+                // android port: no GP2X joystick; touch/keys/gamepads come in through port.cpp
                 {
-
-                    if (Mix_OpenAudio(22050,AUDIO_S16,MIX_DEFAULT_CHANNELS,128) < 0)
-                    #else
-                    if (Mix_OpenAudio(22050,AUDIO_S16,MIX_DEFAULT_CHANNELS,128) < 0)
-                    #endif
+                    if (Mix_OpenAudio(22050,AUDIO_S16,MIX_DEFAULT_CHANNELS,1024) < 0)
                     {
                         GlobalSoundEnabled = false;
                         printf("Failed to initialise sound!\n");
@@ -5736,6 +5799,7 @@ int main(int argc, char **argv)
                             TTF_CloseFont(font);
                             TTF_CloseFont(BigFont);
                             font=NULL;
+                            Port_Shutdown();
                         }
                         else
                         {
@@ -5747,22 +5811,14 @@ int main(int argc, char **argv)
                     {
                         printf("Failed to initialize TTF\n");
                     }
-              #ifdef GP2X
-                    if(SDL_JoystickOpened(0))
-    					SDL_JoystickClose(Joystick);
                 }
-                else
-                {
-                    printf("Failed to open joystick(0)!\n");
-                }
-              #endif
                 SDL_FreeSurface(Buffer);
                 Buffer=NULL;
 			}
 			else
                 printf("Failed To Create Buffer\n");
-            SDL_FreeSurface(Screen);
-            Screen=NULL;
+            SDL_FreeSurface(Buffer1);
+            Buffer1=NULL;
 		}
 		else
 		{

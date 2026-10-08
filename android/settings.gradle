@@ -1,0 +1,2 @@
+rootProject.name = 'Waternet'
+include ':app'

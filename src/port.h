@@ -23,6 +23,10 @@ const char *Port_Path(const char *file);
 #define Mix_LoadWAV(file)        Mix_LoadWAV(Port_Path(file))
 #define Mix_LoadMUS(file)        Mix_LoadMUS(Port_Path(file))
 
+// ---- music on/off button (android port) ----
+int Port_VolumeMusic(int volume);
+#define Mix_VolumeMusic(v) Port_VolumeMusic(v)
+
 // ---- SDL 1.2 flags that no longer exist ----
 #define SDL_HWSURFACE   0
 #define SDL_SRCCOLORKEY SDL_TRUE

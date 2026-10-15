@@ -8,6 +8,7 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include <SDL_mixer.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -36,7 +37,8 @@ static bool          TexturesLost = false;
 static Uint32        LastFlip = 0;
 static std::deque<SDL_Keycode> KeyQueue;
 
-enum Ctrl { C_NONE = -1, C_DPAD = 0, C_A, C_B, C_SELECT, C_L, C_R, C_GAME, C_COUNT };
+enum Ctrl { C_NONE = -1, C_DPAD = 0, C_A, C_B, C_SELECT, C_L, C_R, C_MUSIC, C_GAME, C_COUNT };
+static const int LBL_MUSIC_OFF = C_COUNT;   // extra label texture
 
 struct Circle { float x, y, r; };
 struct Layout {
@@ -44,7 +46,7 @@ struct Layout {
     SDL_Rect game;
     Circle dpad;               // r = half the cross size
     Circle a, b;
-    SDL_FRect select, l, r;    // pill buttons
+    SDL_FRect select, l, r, music;   // pill buttons
     bool portrait;
 };
 static Layout L;
@@ -64,8 +66,8 @@ static int    FlashDir = 0;
 
 static TTF_Font    *LabelFont = NULL;
 static int          LabelFontSize = 0;
-static SDL_Texture *LabelTex[C_COUNT];
-static int          LabelW[C_COUNT], LabelH[C_COUNT];
+static SDL_Texture *LabelTex[C_COUNT + 1];
+static int          LabelW[C_COUNT + 1], LabelH[C_COUNT + 1];
 
 // ---------------------------------------------------------------------------
 // paths
@@ -185,6 +187,7 @@ static void ComputeLayout(int W, int H)
         L.l = { lx - pw / 2, H * 0.10f, pw, ph };
         L.r = { rx - pw / 2, H * 0.10f, pw, ph };
         L.select = { rx - pw / 2, H * 0.86f, pw, ph };
+        L.music = { lx - pw / 2, H * 0.86f, pw, ph };
     } else {
         // game picture on top, controls underneath (like a Game Boy)
         L.game.w = W; L.game.h = W * 3 / 4;
@@ -200,8 +203,41 @@ static void ComputeLayout(int W, int H)
         float pw = fminf(W * 0.22f, ch * 0.22f), ph = pw * 0.32f;
         L.l = { W * 0.05f, top + ch * 0.07f, pw, ph };
         L.r = { W * 0.95f - pw, top + ch * 0.07f, pw, ph };
-        L.select = { W * 0.5f - pw / 2, top + ch * 0.80f, pw, ph };
+        float gap = pw * 0.15f;
+        L.select = { W * 0.5f - pw - gap / 2, top + ch * 0.80f, pw, ph };
+        L.music = { W * 0.5f + gap / 2, top + ch * 0.80f, pw, ph };
     }
+}
+
+// ---------------------------------------------------------------------------
+// music on/off (android port addition, remembered in musicoff.txt)
+// ---------------------------------------------------------------------------
+static bool MusicOff = false, MusicLoaded = false;
+static int  MusicVolume = MIX_MAX_VOLUME;   // what the game asked for
+
+static void LoadMusicSetting()
+{
+    if (MusicLoaded) return;
+    MusicLoaded = true;
+    FILE *f = fopen("musicoff.txt", "r");
+    if (f) { MusicOff = true; fclose(f); }
+}
+
+int Port_VolumeMusic(int volume)
+{
+    LoadMusicSetting();
+    if (volume >= 0) MusicVolume = volume;
+    Mix_VolumeMusic(MusicOff ? 0 : MusicVolume);
+    return MusicVolume;
+}
+
+static void ToggleMusic()
+{
+    LoadMusicSetting();
+    MusicOff = !MusicOff;
+    if (MusicOff) { FILE *f = fopen("musicoff.txt", "w"); if (f) { fputs("1\n", f); fclose(f); } }
+    else remove("musicoff.txt");
+    Mix_VolumeMusic(MusicOff ? 0 : MusicVolume);
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +294,7 @@ static void FillTriangle(float x1, float y1, float x2, float y2, float x3, float
 
 static void FreeLabels()
 {
-    for (int i = 0; i < C_COUNT; i++)
+    for (int i = 0; i <= C_COUNT; i++)
         if (LabelTex[i]) { SDL_DestroyTexture(LabelTex[i]); LabelTex[i] = NULL; }
 }
 
@@ -272,12 +308,13 @@ static void MakeLabels()
     LabelFont = TTF_OpenFont(Port_Path("font.ttf"), size);
     LabelFontSize = size;
     if (!LabelFont) return;
-    const char *txt[C_COUNT] = { NULL, "A", "B", "SELECT", "L", "R", NULL };
+    const char *txt[C_COUNT + 1] = { NULL, "A", "B", "SELECT", "L", "R", "MUSIC", NULL, "MUSIC OFF" };
     SDL_Color white = { 235, 235, 225, 255 };
-    for (int i = 0; i < C_COUNT; i++) {
+    for (int i = 0; i <= C_COUNT; i++) {
         if (!txt[i]) continue;
         // small labels for the pills
-        if (i == C_SELECT || i == C_L || i == C_R) TTF_SetFontSize(LabelFont, (int)(L.select.h * 0.55f));
+        if (i == C_SELECT || i == C_L || i == C_R || i == C_MUSIC || i == LBL_MUSIC_OFF)
+            TTF_SetFontSize(LabelFont, (int)(L.select.h * 0.55f));
         else TTF_SetFontSize(LabelFont, size);
         SDL_Surface *s = TTF_RenderText_Blended(LabelFont, txt[i], white);
         if (!s) continue;
@@ -287,11 +324,13 @@ static void MakeLabels()
     }
 }
 
-static void DrawLabel(int i, float cx, float cy, Uint8 alpha)
+static void DrawLabel(int i, float cx, float cy, Uint8 alpha, float maxW = 0)
 {
     if (!LabelTex[i]) return;
     SDL_SetTextureAlphaMod(LabelTex[i], alpha);
-    SDL_FRect d = { cx - LabelW[i] / 2.0f, cy - LabelH[i] / 2.0f, (float)LabelW[i], (float)LabelH[i] };
+    float k = (maxW > 0 && LabelW[i] > maxW) ? maxW / LabelW[i] : 1.0f;   // shrink to fit
+    float w = LabelW[i] * k, h = LabelH[i] * k;
+    SDL_FRect d = { cx - w / 2.0f, cy - h / 2.0f, w, h };
     SDL_RenderCopyF(Ren, LabelTex[i], NULL, &d);
 }
 
@@ -356,13 +395,14 @@ static void DrawControls()
     }
 
     // pills
-    SDL_FRect pills[3] = { L.select, L.l, L.r };
-    int pid[3] = { C_SELECT, C_L, C_R };
-    for (int i = 0; i < 3; i++) {
+    SDL_FRect pills[4] = { L.select, L.l, L.r, L.music };
+    int pid[4] = { C_SELECT, C_L, C_R, C_MUSIC };
+    for (int i = 0; i < 4; i++) {
         bool on = CtrlActive(pid[i]);
         SDL_FRect p = pills[i];
         FillRoundRect(p, p.h / 2, on ? baseHi : base);
-        DrawLabel(pid[i], p.x + p.w / 2, p.y + p.h / 2, 220);
+        int lbl = (pid[i] == C_MUSIC && MusicOff) ? LBL_MUSIC_OFF : pid[i];
+        DrawLabel(lbl, p.x + p.w / 2, p.y + p.h / 2, (lbl == LBL_MUSIC_OFF) ? 130 : 220, p.w * 0.86f);
     }
 }
 
@@ -621,12 +661,13 @@ static int HitControl(float x, float y)
     if (InRect(L.select, x, y, pad)) return C_SELECT;
     if (InRect(L.l, x, y, pad)) return C_L;
     if (InRect(L.r, x, y, pad)) return C_R;
+    if (InRect(L.music, x, y, pad)) return C_MUSIC;
     if (x >= L.game.x && x < L.game.x + L.game.w && y >= L.game.y && y < L.game.y + L.game.h) return C_GAME;
     return C_NONE;
 }
 
 static const SDL_Keycode CtrlKey[C_COUNT] = {
-    0, DINGOO_BUTTON_A, DINGOO_BUTTON_B, DINGOO_BUTTON_SELECT, DINGOO_BUTTON_L, DINGOO_BUTTON_R, 0
+    0, DINGOO_BUTTON_A, DINGOO_BUTTON_B, DINGOO_BUTTON_SELECT, DINGOO_BUTTON_L, DINGOO_BUTTON_R, 0, 0
 };
 
 static void FingerDown(SDL_FingerID id, float x, float y)
@@ -638,6 +679,8 @@ static void FingerDown(SDL_FingerID id, float x, float y)
     if (f.ctrl == C_DPAD) {
         f.dir = DpadDir(x, y);
         if (f.dir) { KeyQueue.push_back(f.dir); f.nextRepeat = f.t0 + 400; }
+    } else if (f.ctrl == C_MUSIC) {
+        ToggleMusic();
     } else if (f.ctrl != C_NONE && f.ctrl != C_GAME) {
         KeyQueue.push_back(CtrlKey[f.ctrl]);
     }
@@ -746,6 +789,7 @@ int Port_PollEvent(SDL_Event *event)
                 break;
             case SDL_KEYDOWN: {
                 if (ev.key.repeat) break;
+                if (ev.key.keysym.sym == SDLK_m) { ToggleMusic(); FlashUntil[C_MUSIC] = SDL_GetTicks() + 110; break; }
                 SDL_Keycode k = MapKey(ev.key.keysym.sym);
                 if (k) Port_PushKey(k);
                 break;

@@ -44,6 +44,7 @@ Then open the `android` folder in Android Studio and press Run, or run
 | SELECT (back) | on-screen **SELECT** or the Android back gesture/button |
 | L / R (change skin) | on-screen **L** / **R** |
 | X / Y (volume) | the phone's volume buttons |
+| – | on-screen **MUSIC**: turns the music off/on (sound effects stay on); remembered |
 
 Also:
 
@@ -53,7 +54,7 @@ Also:
 * Level selector: tap the board to play it. Tap near its left or right edge, or swipe, to browse levels.
 * Any other screen: tap to continue.
 * Sliding modes: tap an arrow to slide that row or column.
-* Gamepads and keyboards work too: arrows, Enter/Z = A, X = B, Esc = SELECT, Q/E = L/R.
+* Gamepads and keyboards work too: arrows, Enter/Z = A, X = B, Esc = SELECT, Q/E = L/R, M = music on/off.
 
 Both landscape (controls left and right of the picture) and portrait
 (controls underneath) work. Rotate the phone to switch.

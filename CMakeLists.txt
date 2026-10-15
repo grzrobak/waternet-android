@@ -11,7 +11,7 @@ if(ANDROID OR WATERNET_IN_TREE)
     # first, then this directory. Produces libmain.so for SDLActivity.
     add_library(main SHARED ${GAME_SOURCES})
     target_compile_options(main PRIVATE ${GAME_FLAGS})
-    target_link_libraries(main PRIVATE SDL2::SDL2 SDL2_image SDL2_mixer SDL2_ttf)
+    target_link_libraries(main PRIVATE SDL2::SDL2 SDL2_image SDL2_mixer SDL2_ttf $<$<BOOL:${ANDROID}>:log>)
 else()
     # Desktop build, handy for testing: cmake -B build && cmake --build build
     find_package(SDL2 REQUIRED CONFIG)

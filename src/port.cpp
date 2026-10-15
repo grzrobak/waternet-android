@@ -796,6 +796,7 @@ bool Port_PrepareData()
     // inside the APK is unpacked once (and again after each app update).
 #ifdef __ANDROID__
     const char *base = SDL_AndroidGetInternalStoragePath();
+    SDL_Log("Waternet: internal storage = %s", base ? base : "(null)");
 #else
     const char *base = SDL_getenv("PORT_TEST_STORAGE");   // desktop test of this code
 #endif
@@ -803,6 +804,7 @@ bool Port_PrepareData()
     std::string dir = std::string(base) + "/data";
     MakeDirs(dir);
     std::string manifest = ReadAll("manifest.txt");
+    SDL_Log("Waternet: manifest.txt = %d bytes", (int)manifest.size());
     if (manifest.empty()) return false;
     std::string version = manifest.substr(0, manifest.find('\n'));
     std::string have;
@@ -822,10 +824,13 @@ bool Port_PrepareData()
             FILE *f = fopen(out.c_str(), "wb");
             if (f) { fwrite(data.data(), 1, data.size(), f); fclose(f); }
         }
+        SDL_Log("Waternet: unpacked game data to %s", dir.c_str());
         FILE *w = fopen((dir + "/.version").c_str(), "wb");
         if (w) { fwrite(version.data(), 1, version.size(), w); fclose(w); }
     }
-    return chdir(dir.c_str()) == 0;
+    int ok = chdir(dir.c_str()) == 0;
+    SDL_Log("Waternet: chdir(%s) %s", dir.c_str(), ok ? "ok" : "FAILED");
+    return ok;
 #else
     const char *env = SDL_getenv("WATERNET_DATA");
     if (env) return chdir(env) == 0;

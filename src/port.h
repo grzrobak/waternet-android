@@ -8,6 +8,12 @@
 #include <SDL_image.h>
 #include <SDL_mixer.h>
 
+#ifdef __ANDROID__
+// the game's printf() messages go to the Android log (adb logcat -s Waternet)
+#include <android/log.h>
+#define printf(...) __android_log_print(ANDROID_LOG_INFO, "Waternet", __VA_ARGS__)
+#endif
+
 // ---- SDL 1.2 flags that no longer exist ----
 #define SDL_HWSURFACE   0
 #define SDL_SRCCOLORKEY SDL_TRUE

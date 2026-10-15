@@ -14,6 +14,15 @@
 #define printf(...) __android_log_print(ANDROID_LOG_INFO, "Waternet", __VA_ARGS__)
 #endif
 
+// ---- file paths ----
+// On Android SDL_RWFromFile() ignores the current directory, so files the
+// game loads through SDL get an absolute path (current directory + name).
+const char *Port_Path(const char *file);
+#define TTF_OpenFont(file, size) TTF_OpenFont(Port_Path(file), size)
+#define IMG_Load(file)           IMG_Load(Port_Path(file))
+#define Mix_LoadWAV(file)        Mix_LoadWAV(Port_Path(file))
+#define Mix_LoadMUS(file)        Mix_LoadMUS(Port_Path(file))
+
 // ---- SDL 1.2 flags that no longer exist ----
 #define SDL_HWSURFACE   0
 #define SDL_SRCCOLORKEY SDL_TRUE

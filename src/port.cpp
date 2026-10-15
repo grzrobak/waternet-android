@@ -68,6 +68,22 @@ static SDL_Texture *LabelTex[C_COUNT];
 static int          LabelW[C_COUNT], LabelH[C_COUNT];
 
 // ---------------------------------------------------------------------------
+// paths
+// ---------------------------------------------------------------------------
+const char *Port_Path(const char *file)
+{
+    static char buf[8][4096];
+    static int n = 0;
+    if (!file || file[0] == '/') return file;
+    char *out = buf[n]; n = (n + 1) % 8;
+    char cwd[3000];
+    if (!getcwd(cwd, sizeof cwd)) return file;
+    while (file[0] == '.' && file[1] == '/') file += 2;
+    snprintf(out, sizeof buf[0], "%s/%s", cwd, file);
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // surfaces (SDL 1.2 semantics)
 // ---------------------------------------------------------------------------
 SDL_Surface *Port_DisplayFormat(SDL_Surface *s)
@@ -253,7 +269,7 @@ static void MakeLabels()
     if (LabelTex[C_A] && size == LabelFontSize) return;
     FreeLabels();
     if (LabelFont) TTF_CloseFont(LabelFont);
-    LabelFont = TTF_OpenFont("font.ttf", size);
+    LabelFont = TTF_OpenFont(Port_Path("font.ttf"), size);
     LabelFontSize = size;
     if (!LabelFont) return;
     const char *txt[C_COUNT] = { NULL, "A", "B", "SELECT", "L", "R", NULL };
